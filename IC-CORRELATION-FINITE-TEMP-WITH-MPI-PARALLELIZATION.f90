@@ -1,0 +1,544 @@
+       PROGRAM IC_FC_HT_S1_S0_FINITE_TEMP
+               USE MPI
+       IMPLICIT NONE
+       REAL*8,DIMENSION(30,30)::RJ,RJT,OMEGAS1,OMEGAS0,AS1, &
+               AK_DOUBLE_BAR,BK_DOUBLE_BAR,NACME
+       REAL*8,DIMENSION(30,1)::WS1,WS0,D,NAC
+       REAL*8,DIMENSION(1,30)::DT,NAC_TRANS
+       COMPLEX*16,DIMENSION(30,1)::D_COMPLEX,V1,H1,H2
+       COMPLEX*16,DIMENSION(1,30)::DT_COMPLEX,Y6
+       COMPLEX*16,DIMENSION(30,30)::A,B,BB,B_INV,AA,B2, &
+               AA_INV,E2,E1,AB_INV,RJ_COMPLEX, &
+               RJT_COMPLEX,X1,X2,X3,X4,X5,Y1,Y2,Y3,Y4,Y5, &
+               E,B_A_INV,B_A_DOUBLE_BAR_COMPLEX,B_A, &
+               B_A_DOUBLE_BAR,BK_DOUBLE_BAR_COMPLEX, &
+               AK_DOUBLE_BAR_COMPLEX,BS2,AS2, &
+               OMEGAS1_COMPLEX,AK_BAR,BK_BAR,NACME_COMPLEX, &
+               G11,G12,G21,G22
+       COMPLEX*16,DIMENSION(60,60)::AK,AK_INV,G,GK_INV
+       COMPLEX*16,DIMENSION(60,1)::F,AKINV_F,H
+       COMPLEX*16,DIMENSION(1,60)::FT,AKINV_F_TRANS,H_TRANS, &
+               V2,V3,AKINV_T_G
+       REAL*8::TMIN,TMAX,HH,CM_AU,S_AU,T,AMU_AU,AU_HZ, &
+               BETA,KB,KBT,TEMP,EV_AU,PF,AMP,DET_I,DET_R, &
+               DELE,NUMR,NUMI, &
+               T1,ETA,THETA,SCAL,NUM1R,NUM2R, &
+               NUM1I,NUM2I,TRACE_GK_INV_REAL,TRACE_GK_INV_IMAG
+       COMPLEX*16::DET,NUM,K_IC,IC_FC,IC_FC_HT_TOTAL,IC_HT, &
+               TRACE,TRACE_GK_INV,IC_HT_TEMPO,IC_HT_2
+       COMPLEX*16,DIMENSION(1,1)::NUM1,NUM2,NUM3,NUM4
+       INTEGER::I,J,K,M,N,K1,N1,M1,INFO,M2,NP,IERROR,MYID,NP1
+       INTEGER,DIMENSION(60)::IPIV
+       COMPLEX*16,DIMENSION(60)::WORK
+       COMPLEX*16,DIMENSION(4)::IC_HT_1
+!MPI INITILIALIZATION 
+
+       CALL MPI_INIT(IERROR)
+
+!INITIALIZE THE NUMBER OF PROCESSOR (NP) 
+!MYID =  PROCESSORS ID FOR EACH JOB 
+
+       CALL MPI_COMM_SIZE(MPI_COMM_WORLD, NP,IERROR)
+       CALL MPI_COMM_RANK(MPI_COMM_WORLD, MYID, IERROR)      
+
+       OPEN(30,FILE='JMAT-S2-NONPLANAR-S1-URACIL.TXT')
+       OPEN(2,FILE='WS1_URACIL.TXT')
+       OPEN(3,FILE='WS2_NONPLANAR_URACIL.TXT')
+       OPEN(10,FILE='SHIFT-VECTOR-S2-NONPLANAR-S1-URACIL.TXT')
+       OPEN(42,FILE='NAC-S2-NONPLANAR-S1-14-10-GAMESS-NORM-MWT.TXT')
+       OPEN(34,FILE='IC_FC_HT.TXT')
+       
+!       WRITE(*,*)'GIVE N,TMIN,TMAX,M1,ETA,TEMP'   !INPUT PARAMETRE FOR NUMERICAL INTEGRATION
+!       READ(*,*)N,TMIN,TMAX,M1,ETA,TEMP
+!N=NORMAL MODES OF THE INVESTIGATED MOLECULE
+!M1=NUMBER OF INTERVAL FOR INTEGRATION= GRID POINTS
+!ETA=DAMPING PARAMETER 
+       !THIS IS THE INPUT PARAMETERS FOR URACIL
+        N=30
+        TMIN=-5E-012
+        TMAX=5E-012
+        M1=50000
+        ETA=50
+        TEMP=300 
+
+       !INPUT THE MATRIX AND READ THE MATRIX
+       READ(30,*)((RJ(I,J),J=1,N),I=1,N)       !RJ=DUSCHINSKY ROTATION MATRIX
+       READ(3,*)(WS1(I,1),I=1,N)                !WS=FREQUENCY VECTOR OF SINGLET STATE
+       READ(2,*)(WS0(I,1),I=1,N)                !WT=FREQUENCY VECTOR OF TRIPLET STATE
+       READ(10,*)(D(I,1),I=1,N)                !D=DISPLACEMENT VECTOR
+       READ(42,*)(NAC(I,1),I=1,N)                !D=DISPLACEMENT VECTOR
+
+
+       !TRANSFER THE DATA TO ATOMIC UNIT
+       AU_HZ=6.579D0*(10.0D0**15.0D0)
+       CM_AU=4.55634D0*(10.0D0**(-6.0D0))
+       S_AU=0.4134D0*(10.0D0**17.0D0)
+       AMU_AU=(1.82289D0*(10.0D0**3.0D0))
+       AMU_AU=((AMU_AU)**0.5D0)
+       EV_AU=0.036749844D0
+       KB=1.3806452D0*(10.0D0**(-23.0D0))
+       KBT=KB*TEMP
+       KBT=KBT*(6.242D0*(10.0D0**(18.0D0)))    !JOULE To EV
+       KBT=KBT*EV_AU                           !EV TO AU
+       BETA=(1.0D0/KBT)
+       DELE=0.790D0         !ENERGY GAP BETWEEN S1-S0
+       DELE=DELE*EV_AU
+
+!NAC =SQUARE OF THE NONADIABATIC COUPLING PARAMETER FOR T2-T1 IN ATOMIC UNIT 
+
+
+       DO I=1,N
+          WS1(I,1)=WS1(I,1)*CM_AU
+          WS0(I,1)=WS0(I,1)*CM_AU
+       ENDDO
+
+
+       TMAX=TMAX*S_AU
+       TMIN=TMIN*S_AU
+       ETA=ETA*CM_AU
+
+       !GENERATE THE DIAGONAL FREQUENCY MATRIX
+       DO I=1,N
+         DO J=1,N
+         IF(I.EQ.J)THEN
+         OMEGAS1(I,J)=WS1(I,1)
+         OMEGAS0(I,J)=WS0(I,1)
+         OMEGAS1_COMPLEX(I,J)=COMPLEX(WS1(I,1),0.0D0)
+         ELSE
+         OMEGAS1(I,J)=0.0D0
+         OMEGAS0(I,J)=0.0D0
+         OMEGAS1_COMPLEX(I,J)=(0.0D0,0.0D0)
+         ENDIF
+         ENDDO
+       ENDDO
+
+!GENERATE THE TRANSPOSE OF RJ AND D
+       DO I=1,N
+          DO J=1,N
+          RJT(J,I)=RJ(I,J)           !RJTRANSPOSE OF DUSCHINSKY ROTATION MATRIX RJ
+          RJ_COMPLEX(I,J)=COMPLEX(RJ(I,J),0.0D0)
+          RJT_COMPLEX(J,I)=COMPLEX(RJT(J,I),0.0D0)
+          ENDDO
+       ENDDO
+
+
+!GENERATE THE TRANSPOSE OF THE DISPLACEMENT VECTOR
+       DO I=1,N
+         DT(1,I)=D(I,1)                                                 !DT=TRANSPOSE OF DISPLACEMENT VECTOR
+         NAC_TRANS(1,I)=NAC(I,1)
+         D_COMPLEX(I,1)=COMPLEX(D(I,1),0.0D0)
+         DT_COMPLEX(1,I)=COMPLEX(DT(1,I),0.0D0)
+       ENDDO
+
+!NACME = NONADIABATIC COUPLING MATRIX ELEMENTS
+
+         CALL DGEMM('N','N',N,N,1,1.0D0,NAC,N,NAC_TRANS,1, &
+                0.0D0,NACME,N)
+        DO I=1,N
+          DO J=1,N
+          NACME_COMPLEX(I,J)=COMPLEX(NACME(I,J),0.0D0)
+          ENDDO
+        ENDDO
+
+       PF=0.0D0
+       DO I=1,N
+         DO J=1,N
+         IF(I.EQ.J)THEN
+         PF=PF+(EXP(-OMEGAS1(I,J)*BETA))                        !PF = PARTITION FUNCTION
+         ELSE
+                 PF=PF+0.0D0
+         ENDIF
+
+         ENDDO
+       ENDDO
+!........................................................................................................................................................\\
+       !GENERATE THE REQUIRED MATRIX AND MATRIX MULTIPLICATION WITHIN
+       !THE TIME LOOP FOR DETERMINANT CALCULATION IN THE FC REGION
+
+       K_IC=(0.0D0,0.0D0)
+       DO K1=1,M1+1
+        HH=(TMAX-TMIN)/FLOAT(M1)  !HH=GAP BETWEEN THE TWO SUCCESSIVE POINTS
+        M2=(M1/2)+1
+        IF(K1.NE.M2)THEN
+        T=TMIN+(HH*(K1-1))
+        ELSE
+        T=1.0D0*(10.0D0**(-24.0D0))
+        T=T*S_AU
+        ENDIF
+          DO I=1,N
+          DO J=1,N
+          IF(I.EQ.J)THEN
+
+!BS=OMEGAS*TAN(OMEGAS*T/2)
+
+          AK_DOUBLE_BAR(I,J)=OMEGAS0(I,J)/SIN(T*OMEGAS0(I,J))
+          AK_DOUBLE_BAR_COMPLEX(I,J)=COMPLEX(AK_DOUBLE_BAR(I,J),0.0D0)
+
+
+!AS=OMEGAS*SIN(OMEGAS*T/2)
+
+          BK_DOUBLE_BAR(I,J)=OMEGAS0(I,J)/TAN(T*OMEGAS0(I,J))
+          BK_DOUBLE_BAR_COMPLEX(I,J)=COMPLEX(BK_DOUBLE_BAR(I,J),0.0D0)
+
+!FORMATION OF AT
+
+          AS1(I,J)=(COSH(-2.0D0*BETA*OMEGAS1(I,J)))-(COS(-2.0D0*T &
+          *OMEGAS1(I,J)))
+          AK_BAR(I,J)=COMPLEX(((2.0D0*SIN(-OMEGAS1(I,J)*T)*COSH(-BETA* &
+          OMEGAS1(I,J)))/AS1(I,J)),((-2.0D0*COS(-T*OMEGAS1(I,J))* &
+          SINH(-BETA*OMEGAS1(I,J)))/AS1(I,J)))
+
+!FORMATION OF BT
+
+          BK_BAR(I,J)=COMPLEX(((SIN(-2.0D0*OMEGAS1(I,J)*T))/AS1(I,J)), &
+          ((-SINH(-2.0D0*BETA*OMEGAS1(I,J)))/AS1(I,J)))
+          ELSE
+          AK_BAR(I,J)=(0.0D0,0.0D0)
+          AK_DOUBLE_BAR(I,J)=0.0D0
+          BK_BAR(I,J)=(0.0D0,0.0D0)
+          BK_DOUBLE_BAR(I,J)=0.0D0
+          AS1(I,J)=0.0D0
+          AK_DOUBLE_BAR_COMPLEX(I,J)=(0.0D0,0.0D0)
+          BK_DOUBLE_BAR_COMPLEX(I,J)=(0.0D0,0.0D0)
+          ENDIF
+          ENDDO
+       ENDDO
+
+
+      !FORMATION OF K MATRIX AND ITS INVERSE. HERE, WE DENOTES IT AS AK
+
+      !FORMATION OF A AND B MATRIX
+
+      CALL ZGEMM('N','N',N,N,N,(1.0D0,0.0D0),OMEGAS1_COMPLEX,N, &
+                AK_BAR,N,(0.0D0,0.0D0),AS2,N)
+
+      CALL ZGEMM('N','N',N,N,N,(1.0D0,0.0D0),OMEGAS1_COMPLEX,N, &
+              BK_BAR,N,(0.0D0,0.0D0),BS2,N)
+
+      CALL ZGEMM('N','N',N,N,N,(1.0D0,0.0D0),RJT_COMPLEX,N,AS2,N, &
+                (0.0D0,0.0D0),X1,N)
+
+      CALL ZGEMM('N','N',N,N,N,(1.0D0,0.0D0),X1,N,RJ_COMPLEX,N, &
+                (0.0D0,0.0D0),X2,N)
+
+      CALL ZGEMM('N','N',N,N,N,(1.0D0,0.0D0),RJT_COMPLEX,N,BS2,N, &
+             (0.0D0,0.0D0),X3,N)
+
+      CALL ZGEMM('N','N',N,N,N,(1.0D0,0.0D0),X3,N,RJ_COMPLEX,N, &
+                (0.0D0,0.0D0),X4,N)
+
+      DO I=1,N
+       DO J=1,N
+        A(I,J)=(AK_DOUBLE_BAR_COMPLEX(I,J)+X2(I,J))
+        B(I,J)=(BK_DOUBLE_BAR_COMPLEX(I,J)+X4(I,J))
+        ENDDO
+      ENDDO
+
+      !INVERSE OF B 
+
+      DO I=1,N
+       DO J=1,N
+       B_INV(I,J)=B(I,J)
+       ENDDO
+      ENDDO
+
+      CALL ZGETRF(N,N,B_INV,N,IPIV,INFO)
+      CALL ZGETRI(N,B_INV,N,IPIV,WORK,N,INFO)
+
+!FORMATION OF THE DENOMINATOR MATRIX WITHIN THE SQUARE ROOT OG THE
+!DETERMINANT WHICH IS DENOTED HERE AS AA
+
+      CALL ZGEMM('N','N',N,N,N,(1.0D0,0.0D0),A,N,B_INV,N, &
+              (0.0D0,0.0D0),AB_INV,N)
+      CALL ZGEMM('N','N',N,N,N,(1.0D0,0.0D0),AB_INV,N,A,N, &
+              (0.0D0,0.0D0),E1,N)
+      CALL ZGEMM('N','N',N,N,N,(1.0D0,0.0D0),B,N,E1,N, &
+              (0.0D0,0.0D0),E2,N)
+      CALL ZGEMM('N','N',N,N,N,(1.0D0,0.0D0),B,N,B,N, &
+              (0.0D0,0.0D0),B2,N)
+      DO I=1,N
+       DO J=1,N
+       AA(I,J)=(B2(I,J)-E2(I,J))
+       ENDDO
+      ENDDO
+
+      !INVERSE OF AA MATRIX (INVERSE OF THE DENOMINATOR WITHIN THE SQUARE
+      !ROOT OF THE DETERMINANT)
+
+      DO I=1,N
+       DO J=1,N
+       AA_INV(I,J)=AA(I,J)
+       ENDDO
+      ENDDO
+      CALL ZGETRF(N,N,AA_INV,N,IPIV,INFO)
+      CALL ZGETRI(N,AA_INV,N,IPIV,WORK,N,INFO)
+
+      N1=2*N
+     !FORMATION OF K MATRIX
+
+      AK(1:N,1:N)=B
+      AK(1:N,N+1:N1)=-A
+      AK(N+1:N1,1:N)=-A
+      AK(N+1:N1,N+1:N1)=B
+
+      !INVERSE OF AK 
+      !STORED THE AK MATRIX AS AK_INV FOR INVERSION CALCULATION USING BLAS/LAPACK
+
+      DO I=1,N1
+       DO J=1,N1
+        AK_INV(I,J)=AK(I,J)
+       ENDDO
+      ENDDO
+      CALL ZGETRF(N1,N1,AK_INV,N1,IPIV,INFO)
+      CALL ZGETRI(N1,AK_INV,N1,IPIV,WORK,N1,INFO)
+
+
+!XX=NUMERATOR MATRIX WITHIN THE SQUARE ROOT OF THE DETERMINANT
+
+      CALL ZGEMM('N','N',N,N,N,(1.0D0,0.0D0),AK_DOUBLE_BAR_COMPLEX, &
+              N,AS2,N,(0.0D0,0.0D0),X5,N)
+
+
+      !FORMATION OF THE COMPLETE DETERMINANT DENOTED BY BB
+
+      CALL ZGEMM('N','N',N,N,N,(1.0D0,0.0D0),X5,N,AA_INV,N, &
+              (0.0D0,0.0D0),BB,N)
+
+!DETERMINANAT OF BB WHICH IS N BY N MATRIX
+
+      CALL DETERMINANT(N,BB,DET)
+!AMPLITUDE AND PHASE OF THE DETERMINANT 
+      AMP=ABS(DET)
+      AMP=SQRT(AMP)
+      DET_I=AIMAG(DET)
+      DET_R=REAL(DET)
+      THETA=DET_I/DET_R
+      THETA=THETA/2.0D0
+      !WRITE(*,*)T,DET
+
+!........................................................................................................................................................
+
+!........................................................................................................................................................
+
+      !SIMPLIFICATION OF THE EXPONENTIAL PART 
+
+      !FORMATION OF E MATRIX OF N BY N 
+
+      DO I=1,N
+       DO J=1,N
+       E(I,J)=(BS2(I,J)-AS2(I,J))
+       B_A(I,J)=B(I,J)-A(I,J)
+       ENDDO
+      ENDDO
+
+       DO I=1,N
+       DO J=1,N
+        B_A_INV(I,J)=B_A(I,J)
+       ENDDO
+      ENDDO
+      CALL ZGETRF(N,N,B_A_INV,N,IPIV,INFO)
+      CALL ZGETRI(N,B_A_INV,N,IPIV,WORK,N,INFO)
+
+
+      !FORMATION OF F VECTOR AND ITS TRANSPOSE FT CONTAINING 2N ELEMENTS
+
+      CALL ZGEMM('N','N',N,N,N,(1.0D0,0.0D0),RJT_COMPLEX,N,E,N, &
+                (0.0D0,0.0D0),Y1,N)
+      CALL ZGEMM('N','N',N,1,N,(1.0D0,0.0D0),Y1,N,D_COMPLEX,N, &
+                (0.0D0,0.0D0),V1,N)
+
+
+      F(1:N,1:N)=V1
+      F(N+1:N1,1:N)=V1
+
+      DO I=1,N1
+       FT(1,I)=F(I,1)
+      ENDDO
+
+!MATRIX MULTIPLICATION FOR THE EXPONENTIAL PART
+
+      CALL ZGEMM('N1','N1',1,N1,N1,(1.0D0,0.0D0),FT,1,AK_INV,N1, &
+              (0.0D0,0.0D0),V2,1)
+      CALL ZGEMM('N1','N1',1,1,N1,(1.0D0,0.0D0),V2,1,F,N1, &
+              (0.0D0,0.0D0),NUM1,1)
+
+
+      CALL ZGEMM('N','N',1,N,N,(1.0D0,0.0D0),DT_COMPLEX,1,E,N, &
+                (0.0D0,0.0D0),V3,1)
+      CALL ZGEMM('N','N',1,1,N,(1.0D0,0.0D0),V3,1,D_COMPLEX,N, &
+            (0.0D0,0.0D0),NUM2,1)
+
+
+      NUM1R=REAL(NUM1(1,1))/2.0D0
+      NUM1I=AIMAG(NUM1(1,1))/2.0D0
+      NUM2R=REAL(NUM2(1,1))
+      NUM2I=AIMAG(NUM2(1,1))
+      NUMI=-NUM1R+NUM2R+THETA   !-T*DELE !EXCLUDING THE ENERGY GAP FACTOR AS IT HAS BEEN INCORPORATED WITHIN THE FFTW3 PACKAGES
+      NUMR=NUM1I-NUM2I
+
+
+      !TOTAL PART WITHIN THE EXPONENTIAL 
+
+      NUM=COMPLEX(NUMR,NUMI)
+
+      ! CORRELATION FUNCTION IN THE FRANCK-CONDON REGION OR X(T) TERM
+
+      IC_FC=AMP*EXP(NUM)
+
+
+!CONSTRUCTION OF THE HERZBERG-TELLER(HT) PART OR X_K,M(T) TERM
+
+!PARALLELIZATION OF THE MOST TIME CONSUMING LOOP BY USING ALL PROCESSORS
+!THROUGH  DIVIDING THE LOOP ITERATIONS AMONG ALL PROCESSSORS
+
+
+       IC_HT=(0.0D0,0.0D0)
+       IC_HT_2=(0.0D0,0.0D0)
+       NP1=MYID+1
+       DO K=NP1,N,NP
+          DO  M=1,N
+             DO I=1,N
+               DO J=1,N
+                IF(I.EQ.K)THEN
+                G11(I,J)=-BK_DOUBLE_BAR_COMPLEX(K,K)*X2(M,J)
+                G12(I,J)=BK_DOUBLE_BAR_COMPLEX(K,K)*X4(M,J)
+                G21(I,J)=AK_DOUBLE_BAR_COMPLEX(K,K)*X2(M,J)
+                G22(I,J)=-AK_DOUBLE_BAR_COMPLEX(K,K)*X4(M,J)
+                ELSE
+                G11(I,J)=(0.0D0,0.0D0)
+                G12(I,J)=(0.0D0,0.0D0)
+                G21(I,J)=(0.0D0,0.0D0)
+                G22(I,J)=(0.0D0,0.0D0)
+                ENDIF
+               ENDDO
+               IF(I.EQ.K)THEN
+               H1(I,1)=BK_DOUBLE_BAR_COMPLEX(K,K)*V1(M,1)
+               H2(I,1)=-AK_DOUBLE_BAR_COMPLEX(K,K)*V1(M,1)
+               ELSE
+               H1(I,1)=(0.0D0,0.0D0)
+               H2(I,1)=(0.0D0,0.0D0)
+               ENDIF
+              ENDDO
+         G(1:N,1:N)=G11
+         G(1:N,N+1:N1)=G12
+         G(N+1:N1,1:N)=G21
+         G(N+1:N1,N+1:N1)=G22
+         H(1:N,1:N)=H1
+         H(N+1:N1,1:N)=H2
+
+!TRANSPOSE OF THE H VECTOR
+
+         DO I=1,N1
+           H_TRANS(1,I)=H(I,1)
+        ENDDO
+
+!MATRIX MULTIPLICATION FOR THE SPIN-VIBRONIC PART
+
+        !THIS IS FOR THE Tr(GK^(-1))+ [(K^(-1)F)^(T)G(K^(-1)F)]-H^(T)K^(-1)F
+
+
+     CALL ZGEMM('N1','N1',N1,N1,N1,(1.0D0,0.0D0),G,N1,AK_INV,N1, &
+              (0.0D0,0.0D0),GK_INV,N1)
+      CALL ZGEMM('N1','N1',N1,1,N1,(1.0D0,0.0D0),AK_INV,N1,F,N1, &
+              (0.0D0,0.0D0),AKINV_F,N1)
+
+
+      DO I=1,N1
+       AKINV_F_TRANS(1,I)=AKINV_F(I,1)   !TRANSPOSE OF AKINV_F i.e. K^(-1)F
+      ENDDO
+
+
+      CALL ZGEMM('N1','N1',1,N1,N1,(1.0D0,0.0D0),AKINV_F_TRANS,1,G,N1, &
+              (0.0D0,0.0D0),AKINV_T_G,1)
+      CALL ZGEMM('N1','N1',1,1,N1,(1.0D0,0.0D0),AKINV_T_G,1,AKINV_F, &
+              N1,(0.0D0,0.0D0),NUM3,1)
+      CALL ZGEMM('N1','N1',1,1,N1,(1.0D0,0.0D0),H_TRANS,1,AKINV_F,N1, &
+              (0.0D0,0.0D0),NUM4,1)
+
+
+
+      TRACE_GK_INV=(0.0D0,0.0D0)
+
+
+      DO I=1,N1
+        DO J=1,N1
+        IF(I.EQ.J)THEN
+        TRACE_GK_INV=TRACE_GK_INV+(GK_INV(I,J))
+        ELSE
+        TRACE_GK_INV=TRACE_GK_INV+(0.0D0,0.0D0)
+        ENDIF
+        ENDDO
+      ENDDO
+
+      TRACE_GK_INV_REAL=REAL(TRACE_GK_INV) 
+      TRACE_GK_INV_IMAG=AIMAG(TRACE_GK_INV) 
+
+      TRACE=COMPLEX(-TRACE_GK_INV_IMAG,TRACE_GK_INV_REAL)
+
+      !TEMPORARY HT PART FOR EACH PAIR OF NORMAL MODES
+       
+       IC_HT_TEMPO=(TRACE+NUM3(1,1)-NUM4(1,1))*NACME_COMPLEX(K,M)
+    
+       IC_HT=IC_HT+(IC_HT_TEMPO)
+      
+      ENDDO   !END LOOP FOR K 
+      ENDDO   !END LOOP FOR M
+
+!      CALL MPI_BARRIER(MPI_COMM_WORLD,IERROR)
+
+!CALLING ALL LOOP ITERATIONS RESULTS INTO THE MASTER ID I.E. NP=0 BY
+!CALLING THE MPI_GATHER FUNCTION
+
+       CALL MPI_GATHER(IC_HT,1,MPI_DOUBLE_COMPLEX,IC_HT_1 ,1 , &
+       MPI_DOUBLE_COMPLEX,0,MPI_COMM_WORLD, IERROR)
+
+!CALCULATION OF TOTAL HT TERMS FOR EACH TIME
+
+      IF(MYID==0)THEN
+      DO I=1,NP
+      IC_HT_2=IC_HT_2+IC_HT_1(I)
+      ENDDO
+
+
+      T1=ABS(T)
+      IC_FC_HT_TOTAL=AMP*EXP(NUM)*IC_HT_2*EXP(-ETA*T1)*(1.0D0/PF)
+
+      WRITE(34,*)T,IC_FC_HT_TOTAL,REAL(IC_FC_HT_TOTAL), &
+                  AIMAG(IC_FC_HT_TOTAL)
+
+      ENDIF         !ENDIF MYID 
+      ENDDO         !END LOOP FOR T
+
+
+       !DESTRUCTION OF THE MPI 
+
+       CALL MPI_FINALIZE(IERROR)
+
+       END PROGRAM IC_FC_HT_S1_S0_FINITE_TEMP
+
+
+!.................................................................................................................................................................\\
+!SUBROUTINE FOR DETERMINANT CALCULATION USING LAPACK-BLAS LIBRARY
+
+      SUBROUTINE DETERMINANT(N,A,DET)
+      COMPLEX*16::A(N,N)
+      COMPLEX*16::DET,SGN
+      INTEGER::I,INFO,N
+      INTEGER::IPIV(N)
+
+      CALL ZGETRF(N, N, A, N, IPIV,INFO)
+      DET =(1.0D0,0.0D0)
+       DO I = 1,N
+        DET = DET*A(I,I)
+       ENDDO
+      SGN =(1.0D0,0.0D0)
+      DO I = 1, N
+      IF(IPIV(I) /= I) THEN
+        SGN = -SGN
+      END IF
+      ENDDO
+      DET= SGN*DET
+      RETURN
+      END
+
+     
