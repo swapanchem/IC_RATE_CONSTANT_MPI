@@ -1,0 +1,11 @@
+@software{swapanchem_2023_7597456,
+  author       = {swapanchem},
+  title        = {{swapanchem/IC\_RATE\_CONSTANT\_MPI: 
+                   IC\_RATE\_CONSTANT\_MPI}},
+  month        = feb,
+  year         = 2023,
+  publisher    = {Zenodo},
+  version      = {v1.0},
+  doi          = {10.5281/zenodo.7597456},
+  url          = {https://doi.org/10.5281/zenodo.7597456}
+}
