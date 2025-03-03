@@ -1,0 +1,18 @@
+You have to install gfortran, mpi and LAPACK/BLAS library for successfully running the code.
+
+Before running the code you should have all the required data and files as described in the input_ic.txt file. 
+According to your system you should have chnage the value of all the required data.
+The all files should be kept in the same folder during the running of the code.
+
+# Run the internal-conversion-rate-temp.f90 program using the following two commands
+
+gfortran -c determinant_module_complex_IC.f90
+
+# For running the code parallelly 
+
+mpif90 -o internal-conversion-rate-temp.exe internal-conversion-rate-temp.f90 determinant_module_complex_IC.o -llapack -lblas   # in some cases it should be -lscalapack -lopenblas instead of -llapack -lblas
+
+# Execute the program 
+mpirun -n $number ./internal-conversion-rate-temp.exe   # $number should be replaced by the number of processors used 
+
+# Collect the data
