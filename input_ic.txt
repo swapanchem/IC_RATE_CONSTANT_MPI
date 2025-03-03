@@ -1,0 +1,61 @@
+#...............Input data........................................................................
+
+Number of normal modes (N) = 
+75
+
+Nunmber of time interval (nunmber of points) (M1) =
+20000
+
+Upper limit of time in second (TMAX) = 
+10E-012
+
+Lower limit of time in second (TMIN) = 
+-10E-012
+
+Temperature in Kelvin (TEMP) = 
+300
+
+Damping parameter in cm^(-1) (ETA) =
+50
+
+Energy gap between initial ( highest singlet/triplet) and final (lowest singlet/triplet) states in eV (DELE-F-I) = 
+2.02
+
+Number of processors given (NP) = 
+120
+
+
+
+#.............Input files...................................................................................
+
+You have to provide the following required files in the same folder where the code is being executed. 
+
+1. J.TXT (Duschinsky rotation (J) matrix between the initial (I) and the final (F) states )
+
+2. D.TXT (Displacement vector (D) between initial (I) and final (F) states in atomic unit )
+
+3. WI.TXT (Vibrational frequencies of the initial (I) state in cm^(-1) unit )
+
+4. WF.TXT (Vibrational frequencies of the final (F) state in cm^(-1) unit )
+
+5. NAC.TXT (Normal mode specfic mass weighted nonadiabatic coupling vector between the initial (I) and the final (F) states in atomic unit)
+
+
+#............................For the calculation of the IC rate constant............................................................
+
+The input data and files are N, M1, TMIN, TMAX, TEMP, ETA, NP, DELE-F-I, J.TXT, D.TXT, WI.TXT, WF.TXT and NAC.TXT, respectively.
+
+
+#........................Fast Fourier transformation West (FFTW)........................
+
+The computed time-dependent correlation function can be transformed into the frequency domain (energy domain) by using FFTW and then the rate constant correponding to the DELE-F-I is evaluated.
+
+For this FFTW, you can use the FFTW package.
+
+
+The first and second columns of IC_FC_HT.TXT file contain the time and real part of the time-dependent correlation function in atomic unit, respectively. You have to convert the data into the real unit (rate constant in sec^(-1)) by multiplying a unit transformation factor.
+ 
+
+
+
+
